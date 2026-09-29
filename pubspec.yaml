@@ -4,7 +4,8 @@ version: 1.4.1
 homepage: https://github.com/cloudwebrtc/flutter-webrtc
 environment:
   sdk: ">=3.3.0 <4.0.0"
-  flutter: ">=1.22.0"
+  # 3.44+: Flutter applies KGP for plugins that don't (see android/build.gradle).
+  flutter: ">=3.44.0"
 
 dependencies:
   collection: ^1.17.0

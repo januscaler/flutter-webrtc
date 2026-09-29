@@ -2,7 +2,8 @@ group 'com.cloudwebrtc.webrtc'
 version '1.0-SNAPSHOT'
 
 buildscript {
-    ext.kotlin_version = '1.8.10'
+    // compilerOptions {} below needs KGP 2.0+.
+    ext.kotlin_version = '2.3.21'
     repositories {
         google()
         mavenCentral()
@@ -22,8 +23,11 @@ rootProject.allprojects {
     }
 }
 
+// No kotlin-android: AGP 9 compiles Kotlin itself, and while an app still sets
+// android.builtInKotlin=false, Flutter (3.44+) applies KGP to plugins that
+// don't. Flutter decides by searching this file's text, so don't re-add it,
+// even behind a condition.
 apply plugin: 'com.android.library'
-apply plugin: 'kotlin-android'
 
 android {
     if (project.android.hasProperty("namespace")) {
@@ -46,8 +50,18 @@ android {
         targetCompatibility JavaVersion.VERSION_1_8
     }
 
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_1_8
+    // The one Kotlin file lives under src/main/java. When KGP is applied by
+    // Flutter rather than here, that directory isn't a Kotlin source root, so
+    // declare it; this also covers AGP's built-in Kotlin.
+    sourceSets {
+        main.kotlin.srcDirs += 'src/main/java'
+    }
+
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_1_8
     }
 }
 
