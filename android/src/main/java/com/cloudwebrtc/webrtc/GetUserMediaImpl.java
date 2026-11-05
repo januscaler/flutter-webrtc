@@ -13,6 +13,7 @@ import android.graphics.Point;
 import android.hardware.camera2.CameraManager;
 import android.media.AudioDeviceInfo;
 import android.media.projection.MediaProjection;
+import android.media.projection.MediaProjectionConfig;
 import android.media.projection.MediaProjectionManager;
 import android.net.Uri;
 import android.os.Build;
@@ -100,6 +101,7 @@ public class GetUserMediaImpl {
     private static final String PROJECTION_DATA = "PROJECTION_DATA";
     private static final String RESULT_RECEIVER = "RESULT_RECEIVER";
     private static final String REQUEST_CODE = "REQUEST_CODE";
+    private static final String ENTIRE_SCREEN_ONLY = "ENTIRE_SCREEN_ONLY";
 
     static final String TAG = FlutterWebRTCPlugin.TAG;
 
@@ -120,6 +122,17 @@ public class GetUserMediaImpl {
 
 
     public void screenRequestPermissions(ResultReceiver resultReceiver) {
+        screenRequestPermissions(resultReceiver, false);
+    }
+
+    /**
+     * @param entireScreenOnly when true (and the device runs Android 14+), the
+     *                         system consent dialog offers only "Entire screen":
+     *                         the "A single app" option, which is the default
+     *                         selection on Android 14/15 and launches the chosen
+     *                         app in front of the caller, is hidden.
+     */
+    public void screenRequestPermissions(ResultReceiver resultReceiver, boolean entireScreenOnly) {
         mediaProjectionData = null;
         final Activity activity = stateProvider.getActivity();
         if (activity == null) {
@@ -130,6 +143,7 @@ public class GetUserMediaImpl {
         Bundle args = new Bundle();
         args.putParcelable(RESULT_RECEIVER, resultReceiver);
         args.putInt(REQUEST_CODE, CAPTURE_PERMISSION_REQUEST_CODE);
+        args.putBoolean(ENTIRE_SCREEN_ONLY, entireScreenOnly);
 
         ScreenRequestPermissionsFragment fragment = new ScreenRequestPermissionsFragment();
         fragment.setArguments(args);
@@ -148,6 +162,10 @@ public class GetUserMediaImpl {
     }
 
     public void requestCapturePermission(final Result result) {
+        requestCapturePermission(result, false);
+    }
+
+    public void requestCapturePermission(final Result result, boolean entireScreenOnly) {
         screenRequestPermissions(
                 new ResultReceiver(new Handler(Looper.getMainLooper())) {
                     @Override
@@ -160,13 +178,15 @@ public class GetUserMediaImpl {
                             result.success(false);
                         }
                     }
-                });
+                },
+                entireScreenOnly);
     }
 
     public static class ScreenRequestPermissionsFragment extends Fragment {
 
         private ResultReceiver resultReceiver = null;
         private int requestCode = 0;
+        private boolean entireScreenOnly = false;
         private final int resultCode = 0;
 
         private void checkSelfPermissions(boolean requestPermissions) {
@@ -175,6 +195,7 @@ public class GetUserMediaImpl {
                 Bundle args = getArguments();
                 resultReceiver = args.getParcelable(RESULT_RECEIVER);
                 requestCode = args.getInt(REQUEST_CODE);
+                entireScreenOnly = args.getBoolean(ENTIRE_SCREEN_ONLY, false);
                 requestStart(activity, requestCode);
             }
         }
@@ -190,8 +211,18 @@ public class GetUserMediaImpl {
 
                 // call for the projection manager
                 this.startActivityForResult(
-                        mediaProjectionManager.createScreenCaptureIntent(), requestCode);
+                        createScreenCaptureIntent(mediaProjectionManager), requestCode);
             }
+        }
+
+        private Intent createScreenCaptureIntent(MediaProjectionManager mediaProjectionManager) {
+            if (entireScreenOnly && Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                // Android 14+ lets the app restrict the consent dialog to the
+                // default display, removing the "A single app" choice.
+                return mediaProjectionManager.createScreenCaptureIntent(
+                        MediaProjectionConfig.createConfigForDefaultDisplay());
+            }
+            return mediaProjectionManager.createScreenCaptureIntent();
         }
 
         @Override

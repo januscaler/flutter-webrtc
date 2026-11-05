@@ -840,7 +840,8 @@ public class MethodCallHandlerImpl implements MethodCallHandler, StateProvider {
         result.success(null);
         break;
       case "requestCapturePermission": {
-        getUserMediaImpl.requestCapturePermission(result);
+        Boolean entireScreenOnly = call.argument("entireScreenOnly");
+        getUserMediaImpl.requestCapturePermission(result, Boolean.TRUE.equals(entireScreenOnly));
         break;
       }
       case "getDisplayMedia": {
