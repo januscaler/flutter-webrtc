@@ -183,10 +183,17 @@ class Helper {
           AppleNativeAudioManagement.getAppleAudioConfigurationForMode(mode,
               preferSpeakerOutput: preferSpeakerOutput));
 
-  /// Request capture permission for Android/macOS
-  static Future<bool> requestCapturePermission() async {
+  /// Request capture permission for Android/macOS.
+  ///
+  /// [entireScreenOnly] (Android 14+ only, ignored elsewhere) restricts the
+  /// system consent dialog to "Entire screen". Without it the dialog defaults
+  /// to "A single app", and picking one brings that app in front of the
+  /// caller — rarely what a screen-sharing call wants.
+  static Future<bool> requestCapturePermission(
+      {bool entireScreenOnly = false}) async {
     if (WebRTC.platformIsAndroid || WebRTC.platformIsMacOS) {
-      return await WebRTC.invokeMethod('requestCapturePermission');
+      return await WebRTC.invokeMethod('requestCapturePermission',
+          <String, dynamic>{'entireScreenOnly': entireScreenOnly});
     } else {
       throw Exception(
           'requestCapturePermission only support for Android/macOS');
