@@ -395,12 +395,14 @@ void FlutterPeerConnection::RTCPeerConnectionClose(
     RTCPeerConnection* pc,
     const std::string& uuid,
     std::unique_ptr<MethodResultProxy> result) {
-  auto it2 = base_->peerconnections_.find(uuid);
-  if (it2 != base_->peerconnections_.end()) {
-    it2->second->Close();
-    base_->peerconnections_.erase(it2);
-  }
-
+  // Close only closes. The connection and its observer stay registered until
+  // peerConnectionDispose, as on Darwin (`closedByPlugin`): the observer must
+  // outlive Close() because libwebrtc still delivers OnRemoveStream and the
+  // final state change through it, and Dart's dispose() closes the data
+  // channels through this connection's id before it disposes the connection,
+  // so the entry has to be there in both the close-then-dispose and the
+  // dispose-then-close order. Closing twice is harmless.
+  pc->Close();
   result->Success();
 }
 
@@ -408,16 +410,17 @@ void FlutterPeerConnection::RTCPeerConnectionDispose(
     RTCPeerConnection* pc,
     const std::string& uuid,
     std::unique_ptr<MethodResultProxy> result) {
+  // Close() can still deliver callbacks. Keep the observer alive until native
+  // teardown completes, then detach it before deletion. The observer holds a
+  // reference to the connection, so erasing both entries here is what
+  // actually releases the native peer connection.
+  pc->Close();
   auto it = base_->peerconnection_observers_.find(uuid);
   if (it != base_->peerconnection_observers_.end()) {
-    // Close() can still deliver OnRemoveStream callbacks. Keep the observer
-    // alive until native teardown completes, then detach it before deletion.
-    pc->Close();
     pc->DeRegisterRTCPeerConnectionObserver();
     base_->peerconnection_observers_.erase(it);
   }
-
-  // Leave the connection map entry for a subsequent peerConnectionClose call.
+  base_->RemovePeerConnectionForId(uuid);
   result->Success();
 }
 

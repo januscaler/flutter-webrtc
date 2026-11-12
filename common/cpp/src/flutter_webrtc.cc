@@ -404,19 +404,14 @@ void FlutterWebRTC::HandleMethodCall(
     }
     const EncodableMap params =
         GetValue<EncodableMap>(*method_call.arguments());
-    const std::string peerConnectionId = findString(params, "peerConnectionId");
-    RTCPeerConnection* pc = PeerConnectionForId(peerConnectionId);
-    if (pc == nullptr) {
-      result->Error("dataChannelCloseFailed",
-                    "dataChannelClose() peerConnection is null");
-      return;
-    }
-
+    // Closing is idempotent: a channel that is already gone (its connection
+    // was disposed first, or it was closed once already) is a success, not an
+    // error. Data channels are looked up by their own id, so the connection
+    // entry is not needed here.
     const std::string dataChannelId = findString(params, "dataChannelId");
     RTCDataChannel* data_channel = DataChannelForId(dataChannelId);
     if (data_channel == nullptr) {
-      result->Error("dataChannelCloseFailed",
-                    "dataChannelClose() data_channel is null");
+      result->Success();
       return;
     }
     DataChannelClose(data_channel, dataChannelId, std::move(result));
@@ -478,8 +473,8 @@ void FlutterWebRTC::HandleMethodCall(
     const std::string peerConnectionId = findString(params, "peerConnectionId");
     RTCPeerConnection* pc = PeerConnectionForId(peerConnectionId);
     if (pc == nullptr) {
-      result->Error("peerConnectionCloseFailed",
-                    "peerConnectionClose() peerConnection is null");
+      // Already disposed (dispose-then-close order): nothing left to close.
+      result->Success();
       return;
     }
     RTCPeerConnectionClose(pc, peerConnectionId, std::move(result));
