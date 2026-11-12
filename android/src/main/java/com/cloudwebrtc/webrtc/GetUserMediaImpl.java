@@ -178,19 +178,43 @@ public class GetUserMediaImpl {
 
     public static class ScreenRequestPermissionsFragment extends Fragment {
 
+        private static final String STATE_REQUESTED = "screen_capture_requested";
+
         private ResultReceiver resultReceiver = null;
         private int requestCode = 0;
-        private final int resultCode = 0;
+        // True once the consent dialog has been launched. Saved across
+        // activity recreation so a restored fragment does not open a second
+        // dialog from onResume while the first one is still pending.
+        private boolean requested = false;
+
+        @Override
+        public void onCreate(Bundle savedInstanceState) {
+            super.onCreate(savedInstanceState);
+            if (savedInstanceState != null) {
+                requested = savedInstanceState.getBoolean(STATE_REQUESTED, false);
+            }
+        }
+
+        @Override
+        public void onSaveInstanceState(Bundle outState) {
+            super.onSaveInstanceState(outState);
+            outState.putBoolean(STATE_REQUESTED, requested);
+        }
 
         private void checkSelfPermissions(boolean requestPermissions) {
-            if (resultCode != Activity.RESULT_OK) {
-                Activity activity = this.getActivity();
-                Bundle args = getArguments();
-                resultReceiver = args.getParcelable(RESULT_RECEIVER);
-                requestCode = args.getInt(REQUEST_CODE);
-                boolean fullScreenOnly = args.getBoolean(FULL_SCREEN_ONLY, false);
-                requestStart(activity, requestCode, fullScreenOnly);
+            if (requested) {
+                return;
             }
+            Activity activity = this.getActivity();
+            Bundle args = getArguments();
+            if (activity == null || args == null) {
+                return;
+            }
+            resultReceiver = args.getParcelable(RESULT_RECEIVER);
+            requestCode = args.getInt(REQUEST_CODE);
+            boolean fullScreenOnly = args.getBoolean(FULL_SCREEN_ONLY, false);
+            requested = true;
+            requestStart(activity, requestCode, fullScreenOnly);
         }
 
         public void requestStart(Activity activity, int requestCode, boolean fullScreenOnly) {
@@ -223,22 +247,31 @@ public class GetUserMediaImpl {
         @Override
         public void onActivityResult(int requestCode, int resultCode, Intent data) {
             super.onActivityResult(requestCode, resultCode, data);
-            resultCode = resultCode;
-            String[] permissions;
-            if (resultCode != Activity.RESULT_OK) {
-                finish();
-                Bundle resultData = new Bundle();
-                resultData.putString(PERMISSIONS, PERMISSION_SCREEN);
-                resultData.putInt(GRANT_RESULTS, resultCode);
-                resultReceiver.send(requestCode, resultData);
-                return;
+            // A fragment restored after the activity was recreated receives the
+            // result before onResume, so the field may not be populated yet.
+            requested = true;
+            ResultReceiver receiver = resultReceiver;
+            if (receiver == null) {
+                Bundle args = getArguments();
+                receiver = args != null ? args.getParcelable(RESULT_RECEIVER) : null;
             }
             Bundle resultData = new Bundle();
             resultData.putString(PERMISSIONS, PERMISSION_SCREEN);
             resultData.putInt(GRANT_RESULTS, resultCode);
-            resultData.putParcelable(PROJECTION_DATA, data);
-            resultReceiver.send(requestCode, resultData);
+            if (resultCode == Activity.RESULT_OK) {
+                resultData.putParcelable(PROJECTION_DATA, data);
+            }
             finish();
+            if (receiver == null) {
+                Log.w(TAG, "screen capture result dropped: no ResultReceiver");
+                return;
+            }
+            try {
+                receiver.send(requestCode, resultData);
+            } catch (RuntimeException e) {
+                // The receiver may belong to a process that no longer exists.
+                Log.w(TAG, "screen capture result dropped: " + e);
+            }
         }
 
         private void finish() {
