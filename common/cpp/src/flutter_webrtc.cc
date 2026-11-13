@@ -33,8 +33,20 @@ void FlutterWebRTC::HandleMethodCall(
       RTCLoggingSeverity severity = str2LogSeverity(severityStr);
       initLoggerCallback(severity);
     }
+    // The field trials `enableWARP` and `zeroPlayoutDelay` turn on are read
+    // when the peer connection factory is created, so the factory is built
+    // here rather than in the constructor.
+    EnsureWebRTCInitialized(findBoolean(options, "enableWARP"),
+                            findBoolean(options, "zeroPlayoutDelay"));
     result->Success();
-  } else if (method_call.method_name().compare("createPeerConnection") == 0) {
+    return;
+  }
+
+  // Everything below needs the factory. If the Dart side never called
+  // initialize() with options, fall back to the default field trials.
+  EnsureWebRTCInitialized();
+
+  if (method_call.method_name().compare("createPeerConnection") == 0) {
     if (!method_call.arguments()) {
       result->Error("Bad Arguments", "Null arguments received");
       return;
@@ -392,19 +404,14 @@ void FlutterWebRTC::HandleMethodCall(
     }
     const EncodableMap params =
         GetValue<EncodableMap>(*method_call.arguments());
-    const std::string peerConnectionId = findString(params, "peerConnectionId");
-    RTCPeerConnection* pc = PeerConnectionForId(peerConnectionId);
-    if (pc == nullptr) {
-      result->Error("dataChannelCloseFailed",
-                    "dataChannelClose() peerConnection is null");
-      return;
-    }
-
+    // Closing is idempotent: a channel that is already gone (its connection
+    // was disposed first, or it was closed once already) is a success, not an
+    // error. Data channels are looked up by their own id, so the connection
+    // entry is not needed here.
     const std::string dataChannelId = findString(params, "dataChannelId");
     RTCDataChannel* data_channel = DataChannelForId(dataChannelId);
     if (data_channel == nullptr) {
-      result->Error("dataChannelCloseFailed",
-                    "dataChannelClose() data_channel is null");
+      result->Success();
       return;
     }
     DataChannelClose(data_channel, dataChannelId, std::move(result));
@@ -466,8 +473,8 @@ void FlutterWebRTC::HandleMethodCall(
     const std::string peerConnectionId = findString(params, "peerConnectionId");
     RTCPeerConnection* pc = PeerConnectionForId(peerConnectionId);
     if (pc == nullptr) {
-      result->Error("peerConnectionCloseFailed",
-                    "peerConnectionClose() peerConnection is null");
+      // Already disposed (dispose-then-close order): nothing left to close.
+      result->Success();
       return;
     }
     RTCPeerConnectionClose(pc, peerConnectionId, std::move(result));
